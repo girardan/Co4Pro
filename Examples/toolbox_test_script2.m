@@ -3,42 +3,43 @@
 % V. Sinyakov and A. Girard. Formal Controller Synthesis from
 % Specifications Given by Discrete-Time Hybrid Automata. 2019. HAL: https://hal.archives-ouvertes.fr/hal-02361404
 %% System abstraction
+
 M = 1370;
-f_0 = 51.0709;
-f_1 = 0.3494;
-f_2 = 0.4161;
+f_0 = 51;
+f_1 = 1.2567;
+f_2 = 0.4342;
 r = 2;
-v_star = 20;
-T0 = 0.2;
-F1 = @(u, v) (M*u - f_0 - f_1*v - f_2*v^2)*(v > 0)/M + max(M*u - f_0, 0)*(v == 0)/M;
+T0 = 0.5;
+
+F1 = @(u, v) (M*u - f_0 - f_1*v - f_2*v^2)/M ;
 F2 = @(v_1, v_2) real(sqrt((v_1*T0)^2-r^2))/T0 - v_2;
 
 n_x = 4;
-F = @(x, y, u, w) [x(1) + (x(2)-y(3))*T0; min(max(x(2) + F1(u(1), y(2))*T0, 0), 30); min(max(x(3) + F1(w, y(3))*T0, 0), 20); x(4)] * ...
-    (u(2) == x(4) || x(2) <= v_star) + ...
-    [x(1) + F2(x(2), y(3))*T0; x(2); min(max(x(3) + F1(w, y(3))*T0, 0), 20); u(2)]*(u(2) ~= x(4) && x(2) > v_star);
+F = @(x, y, u, w) [x(1) + (x(2)-y(3))*T0; min(max(x(2) + F1(u(1), y(2))*T0, 10), 30); min(max(x(3) + w*T0, 10), 25); x(4)] * ...
+                  (u(2) == x(4)) + ...
+                  [x(1) + F2(x(2), y(3))*T0; min(max(x(2) + F1(u(1), y(2))*T0, 10), 30); min(max(x(3) + w*T0, 10), 25); u(2)]*...
+                  (u(2) ~= x(4));
         
 Partition = cell(n_x, 1);
 
-tmp = [-Inf, linspace(-60, 20, 81)]';
+tmp = [-Inf, linspace(-70, 30, 51)]';
 Partition{1} = [tmp(1:end-1)+eps(tmp(1:end-1)), tmp(2:end)];
 Partition{1}(1, 1) = -Inf;
 
-tmp = [0, linspace(0, 30, 61)]';
+tmp = [10, linspace(10, 30, 41)]';
 Partition{2} = [tmp(1:end-1)+eps(tmp(1:end-1)), tmp(2:end)];
-Partition{2}(1, 1) = 0;
+Partition{2}(1, 1) = 10;
 
-tmp = linspace(0, 20, 21)';
+tmp = linspace(10, 25, 31)';
 Partition{3} = [tmp(1:end-1)+eps(tmp(1:end-1)), tmp(2:end)];
-Partition{3}(1, 1) = 0;
+Partition{3}(1, 1) = 10;
 
 Partition{4} = [0.5, 0.5; 1.5, 1.5];
 
 Controls = cell(2, 1);
-Controls{1} = [-20, 0, 10];
-% Controls{1} = [0, 5, 10, -5, -10, -15, -20];
+Controls{1} = [0, 1, -1, 2, -2, -3, 3];
 Controls{2} = [0.5, 1.5];
-Disturbance = [-20, 10];
+Disturbance = [-3, 3];
 
 tic;
 [TS, TransitionNumber] = AbstractSystemDiscrete(F, Partition, Controls, Disturbance);
@@ -51,23 +52,20 @@ N_inputs = length(Spec.Inputs);
 Np = 3;
 Spec.W = cell(Np, Np, N_inputs);
 Spec.D = cell(Np, Np, N_inputs);
-d_car = 2;
+l = 10;
 for i = 1:N_inputs
     for p1 = 1:Np
         for p2 = 1:Np
-            Spec.W{p1, p2, i} = @(x, x_plus) -1;
+            Spec.W{p1, p2, i} = @(x, x_plus) -x_plus(1)+x(1);
             Spec.D{p1, p2, i} = @(x) 1;
             if p1 == 1 && p2 == 1
-                Spec.D{p1, p2, i} = @(x) max(x(1) + d_car,x(4) - 1);
+                Spec.D{p1, p2, i} = @(x) max(x(1) + l,x(4) - 1);
             elseif p1 == 1 && p2 == 2
-                Spec.D{p1, p2, i} = @(x) max(x(1) + d_car,x(4) - 1);
+                Spec.D{p1, p2, i} = @(x) max(x(1) + l,1-x(4));
             elseif p1 == 2 && p2 == 2
                 Spec.D{p1, p2, i} = @(x) 1 - x(4);
-                Spec.W{p1, p2, i} = @(x, x_plus) -x_plus(1)+x(1);
             elseif p1 == 2 && p2 == 3
-                Spec.D{p1, p2, i} = @(x) max(-x(1) + d_car, 1 - x(4));
-            %elseif p1 == 3 && p2 == 3
-                %Spec.D{p1, p2, i} = @(x) max(-x(1) + d_car, x(4) - 1);
+                Spec.D{p1, p2, i} = @(x) max(-x(1) + l, 1 - x(4));
             end
         end
     end
@@ -78,7 +76,7 @@ TS_with_Spec = AbstractSpecificationDiscrete(Spec, Partition, TS, TransitionNumb
 toc;
 
 %% Controller computation
-Condition = @(x, p, v) max([-x(1) + d_car, x(4) - 1, abs(p-3)]);
+Condition = @(x, p, v) max([-x(1) + l, x(4) - 1, abs(p-3)]);
 X1 = TerminalSet(Partition, Spec, Condition);
 
 tic;
@@ -86,11 +84,14 @@ tic;
 toc;
 
 %% Controllable sets visualization
-[XX, YY, ZZ] = meshgrid(linspace(Partition{2}(2), Partition{2}(end)-1, 60)+1/2, ...
-    linspace(Partition{1}(2), Partition{1}(end)-1, 80)+1/2, ...
-    linspace(Partition{3}(1), Partition{3}(end)-1, 20)+1/2);
 
-VV = reshape(V(1:(end-1)), [81, 61, 20, 2, 3]);
+[XX, YY, ZZ] = meshgrid(linspace(Partition{2}(2), Partition{2}(end)-1, 40)+1/2, ...
+    linspace(Partition{1}(2), Partition{1}(end)-1, 50)+1/2, ...
+    linspace(Partition{3}(1), Partition{3}(end)-1, 30)+1/2);
+
+VV = reshape(V(1:(end-1)), [51, 41, 30, 2, 3]);
+
+
 VV = VV(2:end, 2:end, :, 1, 1);
 VV(VV == Inf) = 10000;
 figure;
@@ -128,32 +129,37 @@ camlight('right');
 view([53, 43]);
 
 
+
 %% Trajectory simulation
 rng(14042020);
 x = zeros(4, 101);
-x(:, 1) = [-40; 5; 10; 0.5];
+x(:, 1) = [-40; 20; 10; 0.5];
 z = zeros(5, 101);
 z(:, 1) = [1; 1; 1; 1; 1];
 u = zeros(2, 100);
 for i = 1:100
+    i
     for s = 1:n_x
         z(s, i) = find((Partition{s}(:, 1) <= x(s, i)) & (Partition{s}(:, 2) >= x(s, i)), 1, 'first');
     end
     if z(5, i) == 3
         break;
     end
-    z_lin = Sub2Ind([81; 61; 20; 2; 3], z(:, i));
-    u_lin = find(min(max(C(z_lin, :, :, :), [], 4), [], 3), 1, 'last');
-    u_sub = Ind2Sub([3; 2], u_lin);
+    z_lin = Sub2Ind([51; 41; 31; 2; 3], z(:, i));
+    u_lin = find(min(max(C(z_lin, :, :, :), [], 4), [], 3), 1, 'first');
+    u_sub = Ind2Sub([7; 2], u_lin);
     u(1, i) = Controls{1}(u_sub(1));
     u(2, i) = Controls{2}(u_sub(2));
     
-    w = Disturbance(1)+rand*60;
+    w = Disturbance(1)+rand*12;
     if w > Disturbance(2)
         w = w / 3;
     end
     
     x(:, i+1) = F(x(:, i), x(:, i), u(:, i), w);
+    
+    
+    
     if z(5, i) == 1 
         if x(4, i+1) > 1
           z(5, i+1) = 2;
@@ -177,42 +183,43 @@ N_max = i;
 tt = (0:N_max)'*T0;
 
 figure;
-subplot(3, 1, 1);
+subplot(4, 1, 1);
 n_takeover1 = find(diff(x(4, :)) > 0, 1, 'first')+1;
 n_takeover2 = find(diff(x(4, :)) < 0, 1, 'first');
 plot(tt(1:n_takeover1), x(1, 1:n_takeover1), 'k');
 hold on;
 plot(tt(n_takeover1:n_takeover2), x(1, n_takeover1:n_takeover2), 'b', 'LineWidth', 3);
 plot(tt(n_takeover2:N_max), x(1, n_takeover2:N_max), 'k');
-plot(tt(1:N_max), zeros(N_max, 1), '-.r');
+plot(tt(1:N_max), -l*ones(N_max, 1), '-.r');
+plot(tt(1:N_max), l*ones(N_max, 1), '-.r');
 hold off;
 grid on
-xlabel('t', 'FontSize', 12)
-ylabel('relative distance', 'FontSize', 12)
-ylim([-60, 20]);
-legend('First lane', 'Second lane', 'Location', 'northwest', 'FontSize', 10);
+ylabel('x^1', 'FontSize', 12)
+ylim([-50, 20]);
+legend('First lane', 'Second lane', 'Location', 'southeast', 'FontSize', 10);
 
-%figure;
-subplot(3, 1, 2);
+subplot(4, 1, 2);
 plot(tt(1:N_max), x(2, 1:N_max), 'b');
 hold on;
 plot(tt(1:N_max), x(3, 1:N_max), 'r');
 hold off;
 grid on
-xlabel('t', 'FontSize', 12)
 ylabel('velocities', 'FontSize', 12)
-legend('x^2', 'x^3', 'Location', 'northwest', 'FontSize', 10)
-ylim([-5, 35]);
+legend('x^2', 'x^3', 'Location', 'southeast', 'FontSize', 10)
+ylim([0, 30]);
 
-%figure;
-subplot(3, 1, 3);
-plot(tt(1:N_max-1), u(1, 1:N_max-1), 'r');
+subplot(4, 1, 3);
+plot(tt(1:N_max), u(1, 1:N_max), 'r');
 grid on
-xlabel('t', 'FontSize', 12)
 ylabel('u', 'FontSize', 12)
-ylim([-25, 15]);
+ylim([-1, 4]);
 
-
+subplot(4, 1, 4);
+plot(tt(1:N_max), z(5,1:N_max), 'b');
+grid on
+xlabel('t','FontSize',12)
+ylabel('p','FontSize',12)
+ylim([0.5, 3.5]);
 
 
 
